@@ -4,6 +4,7 @@ using BusBookingSystem.API.DTOs.Common;
 using BusBookingSystem.API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 
 namespace BusBookingSystem.API.Controllers
 {
@@ -12,10 +13,12 @@ namespace BusBookingSystem.API.Controllers
     public class AdminController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IDistributedCache _cache;
 
-        public AdminController(AppDbContext context)
+        public AdminController(AppDbContext context, IDistributedCache cache)
         {
             _context = context;
+            _cache = cache;
         }
 
         #region Dashboard & Analytics
@@ -24,6 +27,9 @@ namespace BusBookingSystem.API.Controllers
         [HttpGet("dashboard")]
         public async Task<ActionResult<ApiResponse<AdminDashboardDto>>> GetDashboard()
         {
+            if (!await IsAdminUser())
+                return Unauthorized(ApiResponse<AdminDashboardDto>.FailureResponse("Admin access required"));
+
             var today = DateTime.UtcNow.Date;
             var monthStart = new DateTime(today.Year, today.Month, 1);
 
@@ -923,6 +929,32 @@ namespace BusBookingSystem.API.Controllers
                 Operators = users.Count(u => u.Role == UserRole.Operator),
                 Admins = users.Count(u => u.Role == UserRole.Admin)
             };
+        }
+
+        private async Task<bool> IsAdminUser()
+        {
+            var userId = await GetCurrentUserId();
+            if (userId == null)
+                return false;
+
+            var user = await _context.Users.FindAsync(userId);
+            return user?.Role == UserRole.Admin;
+        }
+
+        private async Task<Guid?> GetCurrentUserId()
+        {
+            var token = Request.Headers["X-User-Token"].FirstOrDefault();
+            if (string.IsNullOrEmpty(token))
+                return null;
+
+            var userIdString = await _cache.GetStringAsync($"token:{token}");
+            if (string.IsNullOrEmpty(userIdString))
+                return null;
+
+            if (Guid.TryParse(userIdString, out var userId))
+                return userId;
+
+            return null;
         }
 
         #endregion

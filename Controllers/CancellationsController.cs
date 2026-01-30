@@ -4,6 +4,7 @@ using BusBookingSystem.API.DTOs.Common;
 using BusBookingSystem.API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 
 namespace BusBookingSystem.API.Controllers
 {
@@ -12,6 +13,7 @@ namespace BusBookingSystem.API.Controllers
     public class CancellationsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IDistributedCache _cache;
 
         // Cancellation policy slabs
         private static readonly List<(int HoursBefore, decimal ChargePercentage, string Description)> CancellationSlabs = new()
@@ -23,9 +25,10 @@ namespace BusBookingSystem.API.Controllers
             (0, 100, "Less than 6 hours before departure - No refund")
         };
 
-        public CancellationsController(AppDbContext context)
+        public CancellationsController(AppDbContext context, IDistributedCache cache)
         {
             _context = context;
+            _cache = cache;
         }
 
         // POST: api/cancellations
@@ -56,13 +59,15 @@ namespace BusBookingSystem.API.Controllers
             // Calculate refund
             var (refundAmount, cancellationCharges, appliedSlab) = CalculateRefund(booking.TotalFare, booking.Trip.DepartureDateTime);
 
-            var userId = GetCurrentUserId();
+            var userId = await GetCurrentUserId();
+            if (userId == null)
+                return Unauthorized(ApiResponse<CreateCancellationResponseDto>.FailureResponse("Invalid or missing token. Please login first."));
 
             var cancellation = new Cancellation
             {
                 CancellationId = Guid.NewGuid(),
                 BookingId = booking.BookingId,
-                CancelledById = userId,
+                CancelledById = userId.Value,
                 CancellationReason = request.Reason ?? "Customer requested cancellation",
                 RefundAmount = refundAmount,
                 CancellationCharges = cancellationCharges,
@@ -185,10 +190,20 @@ namespace BusBookingSystem.API.Controllers
         }
 
         // Helper methods
-        private Guid GetCurrentUserId()
+        private async Task<Guid?> GetCurrentUserId()
         {
-            // TODO: Implement proper JWT authentication
-            return Guid.Empty;
+            var token = Request.Headers["X-User-Token"].FirstOrDefault();
+            if (string.IsNullOrEmpty(token))
+                return null;
+
+            var userIdString = await _cache.GetStringAsync($"token:{token}");
+            if (string.IsNullOrEmpty(userIdString))
+                return null;
+
+            if (Guid.TryParse(userIdString, out var userId))
+                return userId;
+
+            return null;
         }
 
         private static (decimal RefundAmount, decimal CancellationCharges, string AppliedSlab) CalculateRefund(decimal totalFare, DateTime departureTime)

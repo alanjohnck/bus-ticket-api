@@ -47,20 +47,77 @@ A comprehensive RESTful API for bus ticket booking system built with .NET 8 and 
 
 ## ?? Authentication
 
-This API uses a simple token-based authentication system.
+This API uses a simple **token-based authentication** system with in-memory caching.
 
 ### How Authentication Works
 
-1. **Login** to get a token
-2. **Include the token** in subsequent requests using the `X-User-Token` header
+```
+???????????????????????????????????????????????????????????????????
+?                    AUTHENTICATION FLOW                          ?
+???????????????????????????????????????????????????????????????????
+?                                                                 ?
+?  1. LOGIN                                                       ?
+?     POST /api/auth/login                                        ?
+?     Body: { "email": "...", "password": "..." }                 ?
+?     ??? Returns token in response                               ?
+?                                                                 ?
+?  2. STORE TOKEN                                                 ?
+?     Save the token from login response                          ?
+?                                                                 ?
+?  3. USE TOKEN IN REQUESTS                                       ?
+?     Add header: X-User-Token: YOUR_TOKEN_HERE                   ?
+?     ??? All authenticated endpoints require this header         ?
+?                                                                 ?
+?  4. LOGOUT                                                      ?
+?     POST /api/auth/logout                                       ?
+?     Header: X-User-Token: YOUR_TOKEN_HERE                       ?
+?     ??? Token is invalidated                                    ?
+?                                                                 ?
+???????????????????????????????????????????????????????????????????
+```
+
+### Token Details
+- **Token Type**: Random Base64 string (URL-safe)
+- **Storage**: In-memory distributed cache
+- **Expiration**: 24 hours from login
+- **Header Name**: `X-User-Token`
 
 ### Test Credentials (from seed data)
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@busbooking.com | Password@123 |
-| Operator | operator1@redbus.com | Password@123 |
-| Passenger | john.doe@gmail.com | Password@123 |
+| Role | Email | Password | Access Level |
+|------|-------|----------|--------------|
+| Admin | admin@busbooking.com | Password@123 | Full system access |
+| Operator | operator1@redbus.com | Password@123 | Bus/Schedule management |
+| Passenger | john.doe@gmail.com | Password@123 | Booking/Profile access |
+
+### Quick Start - Get Your Token
+
+```bash
+# 1. Login to get token
+curl -X POST http://localhost:5129/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "john.doe@gmail.com", "password": "Password@123"}'
+
+# Response contains token:
+# { "data": { "token": "abc123xyz...", ... } }
+
+# 2. Use token in authenticated requests
+curl -X GET http://localhost:5129/api/users/profile \
+  -H "X-User-Token: abc123xyz..."
+```
+
+---
+
+## ?? API Endpoints & Testing Guide
+
+### Endpoints by Authentication Level
+
+| Level | Endpoints | Required Header |
+|-------|-----------|-----------------|
+| **Public** | Search, Routes, Trips, Buses, Offers | None |
+| **Passenger** | Profile, Bookings, Reviews, Notifications | `X-User-Token` (any user) |
+| **Operator** | `/api/operator/*` | `X-User-Token` (operator user) |
+| **Admin** | `/api/admin/*` | `X-User-Token` (admin user) |
 
 ---
 
@@ -551,15 +608,40 @@ X-User-Token: YOUR_TOKEN_HERE
 
 ### 13. Operator APIs
 
+> **Note**: All operator endpoints require authentication with an operator account.
+> Login with `operator1@redbus.com` / `Password@123` to get the token.
+
+#### Get Operator Dashboard
+```http
+GET /api/operator/dashboard
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
 #### Get Operator Profile
 ```http
 GET /api/operator/profile
 X-User-Token: OPERATOR_TOKEN_HERE
 ```
 
+#### Update Operator Profile
+```http
+PUT /api/operator/profile
+X-User-Token: OPERATOR_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "companyName": "RedBus Travels Updated",
+  "contactEmail": "contact@redbus.com",
+  "contactPhone": "+919876543210",
+  "address": "123 Main Street",
+  "city": "Bangalore",
+  "state": "Karnataka"
+}
+```
+
 #### Get Operator's Buses
 ```http
-GET /api/operator/buses?pageNumber=1&pageSize=10
+GET /api/operator/buses
 X-User-Token: OPERATOR_TOKEN_HERE
 ```
 
@@ -571,11 +653,48 @@ Content-Type: application/json
 
 {
   "busNumber": "NEW-001",
-  "busType": "AC",
-  "busCategory": "Sleeper",
+  "busType": 0,
+  "busCategory": 0,
   "totalSeats": 36,
   "registrationNumber": "KA-01-XX-1234",
   "amenities": ["WiFi", "Charging Point", "Blanket"]
+}
+```
+
+**Bus Type Values**: `0` = AC, `1` = NonAC
+**Bus Category Values**: `0` = Sleeper, `1` = Seater, `2` = SemiSleeper
+
+#### Get Operator's Routes
+```http
+GET /api/operator/routes
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
+#### Create Route
+```http
+POST /api/operator/routes
+X-User-Token: OPERATOR_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "sourceCity": "Bangalore",
+  "destinationCity": "Mumbai",
+  "distanceKm": 980,
+  "estimatedDurationHours": 14,
+  "stops": [
+    {
+      "stopName": "Hubli",
+      "stopOrder": 1,
+      "arrivalTimeOffset": "04:00:00",
+      "departureTimeOffset": "04:15:00"
+    },
+    {
+      "stopName": "Pune",
+      "stopOrder": 2,
+      "arrivalTimeOffset": "10:00:00",
+      "departureTimeOffset": "10:30:00"
+    }
+  ]
 }
 ```
 
@@ -594,10 +713,88 @@ Content-Type: application/json
 {
   "busId": "77777777-7777-7777-7777-777777777771",
   "routeId": "55555555-5555-5555-5555-555555555551",
-  "departureTime": "21:00:00",
-  "arrivalTime": "03:00:00",
-  "baseFare": 850.00
+  "departureTime": "2025-02-01T21:00:00",
+  "arrivalTime": "2025-02-02T05:00:00",
+  "baseFare": 850.00,
+  "isActive": true,
+  "availableDates": ["2025-02-01", "2025-02-02", "2025-02-03"]
 }
+```
+
+#### Get Schedule Details
+```http
+GET /api/operator/schedules/{scheduleId}
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
+#### Update Schedule
+```http
+PUT /api/operator/schedules/{scheduleId}
+X-User-Token: OPERATOR_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "departureTime": "2025-02-01T22:00:00",
+  "arrivalTime": "2025-02-02T06:00:00",
+  "baseFare": 900.00
+}
+```
+
+#### Delete Schedule
+```http
+DELETE /api/operator/schedules/{scheduleId}
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
+#### Get Operator's Trips
+```http
+GET /api/operator/trips
+X-User-Token: OPERATOR_TOKEN_HERE
+
+# Filter by date
+GET /api/operator/trips?date=2025-02-01
+```
+
+#### Get Trip Details
+```http
+GET /api/operator/trips/{tripId}
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
+#### Update Trip Status
+```http
+PATCH /api/operator/trips/{tripId}/status
+X-User-Token: OPERATOR_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "currentStatus": 1
+}
+```
+
+**Trip Status Values**: `0` = Scheduled, `1` = InTransit, `2` = Completed, `3` = Cancelled
+
+#### Cancel Trip
+```http
+POST /api/operator/trips/{tripId}/cancel
+X-User-Token: OPERATOR_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "reason": "Weather conditions"
+}
+```
+
+#### Get Trip Bookings
+```http
+GET /api/operator/trips/{tripId}/bookings
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
+#### Get Trip Passengers
+```http
+GET /api/operator/trips/{tripId}/passengers
+X-User-Token: OPERATOR_TOKEN_HERE
 ```
 
 #### Get Operator's Bookings
@@ -606,9 +803,36 @@ GET /api/operator/bookings?pageNumber=1&pageSize=10
 X-User-Token: OPERATOR_TOKEN_HERE
 ```
 
+#### Get Revenue Statistics
+```http
+GET /api/operator/revenue?startDate=2025-01-01&endDate=2025-01-31&groupBy=day
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
+#### Export Revenue Report
+```http
+GET /api/operator/revenue/export?startDate=2025-01-01&endDate=2025-01-31&format=csv
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
+#### Get Operator Reviews
+```http
+GET /api/operator/reviews?pageNumber=1&pageSize=10
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
+#### Get Review Statistics
+```http
+GET /api/operator/reviews/stats
+X-User-Token: OPERATOR_TOKEN_HERE
+```
+
 ---
 
 ### 14. Admin APIs
+
+> **Note**: All admin endpoints require authentication with an admin account.
+> Login with `admin@busbooking.com` / `Password@123` to get the token.
 
 #### Get Dashboard Stats
 ```http
@@ -616,9 +840,54 @@ GET /api/admin/dashboard
 X-User-Token: ADMIN_TOKEN_HERE
 ```
 
+#### Get Analytics
+```http
+GET /api/admin/analytics?metric=bookings&startDate=2025-01-01&endDate=2025-01-31
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+**Metric Values**: `bookings`, `revenue`, `users`, `trips`
+
+#### Get Reports
+```http
+GET /api/admin/reports?reportType=bookings&startDate=2025-01-01&endDate=2025-01-31
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+**Report Types**: `bookings`, `revenue`, `operators`, `users`
+
 #### Get All Users
 ```http
-GET /api/admin/users?pageNumber=1&pageSize=10
+GET /api/admin/users?pageNumber=1&pageSize=10&role=Passenger
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Get User Details
+```http
+GET /api/admin/users/{userId}
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Update User Status
+```http
+PATCH /api/admin/users/{userId}/status
+X-User-Token: ADMIN_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "isActive": false
+}
+```
+
+#### Delete User
+```http
+DELETE /api/admin/users/{userId}
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Get User Statistics
+```http
+GET /api/admin/users/statistics
 X-User-Token: ADMIN_TOKEN_HERE
 ```
 
@@ -628,30 +897,118 @@ GET /api/admin/operators?pageNumber=1&pageSize=10
 X-User-Token: ADMIN_TOKEN_HERE
 ```
 
-#### Approve Operator
+#### Get Operator Details
 ```http
-POST /api/admin/operators/{operatorId}/approve
+GET /api/admin/operators/{operatorId}
 X-User-Token: ADMIN_TOKEN_HERE
 ```
 
-#### Reject Operator
+#### Get Pending Operator Approvals
 ```http
-POST /api/admin/operators/{operatorId}/reject
+GET /api/admin/operators/pending
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Approve Operator
+```http
+POST /api/admin/operators/approve
 X-User-Token: ADMIN_TOKEN_HERE
 Content-Type: application/json
 
 {
-  "reason": "Incomplete documentation"
+  "operatorId": "44444444-4444-4444-4444-444444444441"
 }
+```
+
+#### Update Operator Status
+```http
+PATCH /api/admin/operators/{operatorId}/status
+X-User-Token: ADMIN_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "isApproved": false
+}
+```
+
+#### Delete Operator
+```http
+DELETE /api/admin/operators/{operatorId}
+X-User-Token: ADMIN_TOKEN_HERE
 ```
 
 #### Get All Bookings
 ```http
-GET /api/admin/bookings?pageNumber=1&pageSize=10
+GET /api/admin/bookings?pageNumber=1&pageSize=10&status=Confirmed
 X-User-Token: ADMIN_TOKEN_HERE
 ```
 
-#### Create Offer (Admin)
+#### Get Booking Statistics
+```http
+GET /api/admin/bookings/statistics
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Modify Booking
+```http
+PATCH /api/admin/bookings/{bookingId}
+X-User-Token: ADMIN_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "bookingStatus": 2
+}
+```
+
+**Booking Status Values**: `0` = Pending, `1` = Confirmed, `2` = Cancelled, `3` = Completed
+
+#### Get All Payments
+```http
+GET /api/admin/payments?pageNumber=1&pageSize=10&status=Completed
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Get Failed Payments
+```http
+GET /api/admin/payments/failed
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Get Payment Reconciliation
+```http
+GET /api/admin/payments/reconcile?date=2025-01-30
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Approve Refund
+```http
+POST /api/admin/refunds/{refundId}/approve
+X-User-Token: ADMIN_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "notes": "Approved by admin"
+}
+```
+
+#### Reject Refund
+```http
+POST /api/admin/refunds/{refundId}/reject
+X-User-Token: ADMIN_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "reason": "Invalid refund request"
+}
+```
+
+#### Get All Offers
+```http
+GET /api/admin/offers?pageNumber=1&pageSize=10
+X-User-Token: ADMIN_TOKEN_HERE
+```
+
+#### Create Offer
 ```http
 POST /api/admin/offers
 X-User-Token: ADMIN_TOKEN_HERE
@@ -660,14 +1017,36 @@ Content-Type: application/json
 {
   "offerCode": "NEWOFFER25",
   "description": "New Year Special - 25% off",
-  "discountType": "Percentage",
+  "discountType": 0,
   "discountValue": 25,
   "minBookingAmount": 500,
   "maxDiscount": 200,
   "validFrom": "2025-01-01",
   "validTo": "2025-03-31",
-  "usageLimit": 1000
+  "usageLimit": 1000,
+  "isActive": true
 }
+```
+
+**Discount Type Values**: `0` = Percentage, `1` = Flat
+
+#### Update Offer
+```http
+PUT /api/admin/offers/{offerId}
+X-User-Token: ADMIN_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "description": "Updated description",
+  "discountValue": 30,
+  "isActive": false
+}
+```
+
+#### Delete Offer
+```http
+DELETE /api/admin/offers/{offerId}
+X-User-Token: ADMIN_TOKEN_HERE
 ```
 
 ---
@@ -675,10 +1054,60 @@ Content-Type: application/json
 ## ?? Testing with Swagger UI
 
 1. Open Swagger UI at `http://localhost:5129/swagger`
+
 2. **For authenticated endpoints:**
    - First call `POST /api/auth/login` with test credentials
    - Copy the `token` from the response
    - For each authenticated request, add header: `X-User-Token: YOUR_TOKEN`
+
+### Testing Different Roles
+
+#### As Passenger:
+```bash
+# Login
+POST /api/auth/login
+{ "email": "john.doe@gmail.com", "password": "Password@123" }
+
+# Copy token and use in:
+GET /api/users/profile
+POST /api/bookings
+GET /api/users/profile/bookings
+```
+
+#### As Operator:
+```bash
+# Login
+POST /api/auth/login
+{ "email": "operator1@redbus.com", "password": "Password@123" }
+
+# Copy token and use in:
+GET /api/operator/dashboard
+GET /api/operator/buses
+POST /api/operator/schedules
+GET /api/operator/revenue
+```
+
+#### As Admin:
+```bash
+# Login
+POST /api/auth/login
+{ "email": "admin@busbooking.com", "password": "Password@123" }
+
+# Copy token and use in:
+GET /api/admin/dashboard
+GET /api/admin/users
+GET /api/admin/operators/pending
+POST /api/admin/offers
+```
+
+### Common Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| 401 Unauthorized | Missing or invalid token | Login again to get a new token |
+| 401 "Not authorized as operator" | Using non-operator account | Login with operator credentials |
+| 401 "Admin access required" | Using non-admin account | Login with admin credentials |
+| 404 Not Found | Resource doesn't exist | Check the ID in your request |
 
 ## ?? Sample Data IDs (from Seed Data)
 

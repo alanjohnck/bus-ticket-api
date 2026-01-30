@@ -4,6 +4,7 @@ using BusBookingSystem.API.DTOs.Operator;
 using BusBookingSystem.API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
 
 namespace BusBookingSystem.API.Controllers
@@ -13,10 +14,12 @@ namespace BusBookingSystem.API.Controllers
     public class OperatorController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IDistributedCache _cache;
 
-        public OperatorController(AppDbContext context)
+        public OperatorController(AppDbContext context, IDistributedCache cache)
         {
             _context = context;
+            _cache = cache;
         }
 
         #region Dashboard & Profile
@@ -1261,8 +1264,8 @@ namespace BusBookingSystem.API.Controllers
 
         private async Task<Guid?> GetCurrentOperatorId()
         {
-            var userId = GetCurrentUserId();
-            if (userId == Guid.Empty)
+            var userId = await GetCurrentUserId();
+            if (userId == null || userId == Guid.Empty)
                 return null;
 
             var operatorEntity = await _context.BusOperators
@@ -1271,10 +1274,21 @@ namespace BusBookingSystem.API.Controllers
             return operatorEntity?.OperatorId;
         }
 
-        private Guid GetCurrentUserId()
+        private async Task<Guid?> GetCurrentUserId()
         {
-            // TODO: Implement proper JWT authentication
-            return Guid.Empty;
+            // Get token from header
+            var token = Request.Headers["X-User-Token"].FirstOrDefault();
+            if (string.IsNullOrEmpty(token))
+                return null;
+
+            var userIdString = await _cache.GetStringAsync($"token:{token}");
+            if (string.IsNullOrEmpty(userIdString))
+                return null;
+
+            if (Guid.TryParse(userIdString, out var userId))
+                return userId;
+
+            return null;
         }
 
         private static List<string> ParseAmenities(string? amenitiesJson)
