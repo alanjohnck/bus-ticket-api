@@ -14,7 +14,10 @@ namespace BusBookingSystem.API.Models
         public DateTime DepartureTime { get; set; }
         public DateTime ArrivalTime { get; set; }
         public decimal BaseFare { get; set; }
-        public string AvailableDatesJson { get; set; } // Simplified for array storage [cite: 294]
+        public string AvailableDatesJson { get; set; } // Simplified for array storage
         public bool IsActive { get; set; }
+
+        // Navigation
+        public ICollection<Trip> Trips { get; set; }
     }
 }
