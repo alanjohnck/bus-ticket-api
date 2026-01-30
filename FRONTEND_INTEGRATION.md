@@ -1341,6 +1341,117 @@ export default SeatSelection;
 ????????????????????????????????????????????????????????????????????
 ```
 
+### 4. Operator Schedule Management Flow
+
+```
+????????????????????????????????????????????????????????????????????
+?                 OPERATOR SCHEDULE MANAGEMENT FLOW                ?
+????????????????????????????????????????????????????????????????????
+?                                                                  ?
+?  1. LOGIN AS OPERATOR                                            ?
+?     POST /auth/login                                             ?
+?     Email: operator1@redbus.com                                  ?
+?     ??? Get operator token                                      ?
+?                                                                  ?
+?  2. VIEW DASHBOARD                                               ?
+?     GET /operator/dashboard                                      ?
+?     Header: X-User-Token: OPERATOR_TOKEN                         ?
+?     ??? See overall statistics                                  ?
+?                                                                  ?
+?  3. CHECK EXISTING BUSES                                         ?
+?     GET /operator/buses                                          ?
+?     ??? List of operator's buses                                ?
+?                                                                  ?
+?  4. CREATE NEW BUS (if needed)                                   ?
+?     POST /operator/buses                                         ?
+?     Body: { busNumber, busType, busCategory, totalSeats, ... }   ?
+?     ??? New bus created                                         ?
+?                                                                  ?
+?  5. CHECK EXISTING ROUTES                                        ?
+?     GET /operator/routes                                         ?
+?     ??? List of available routes                                ?
+?                                                                  ?
+?  6. CREATE NEW ROUTE (if needed)                                 ?
+?     POST /operator/routes                                        ?
+?     Body: { sourceCity, destinationCity, distanceKm, ... }       ?
+?     ??? New route created                                       ?
+?                                                                  ?
+?  7. CREATE SCHEDULE                                              ?
+?     POST /operator/schedules                                     ?
+?     Body: { busId, routeId, departureTime, arrivalTime, fare }   ?
+?     ??? Schedule created                                        ?
+?                                                                  ?
+?  8. VIEW SCHEDULES                                               ?
+?     GET /operator/schedules                                      ?
+?     ??? All operator's schedules                                ?
+?                                                                  ?
+?  9. VIEW TRIPS & BOOKINGS                                        ?
+?     GET /operator/trips                                          ?
+?     GET /operator/trips/{tripId}/bookings                        ?
+?     ??? Trip details and passenger list                         ?
+?                                                                  ?
+?  10. VIEW REVENUE                                                ?
+?      GET /operator/revenue?startDate=...&endDate=...             ?
+?      ??? Revenue statistics and breakdown                       ?
+?                                                                  ?
+????????????????????????????????????????????????????????????????????
+```
+
+### 5. Admin Management Flow
+
+```
+????????????????????????????????????????????????????????????????????
+?                     ADMIN MANAGEMENT FLOW                        ?
+????????????????????????????????????????????????????????????????????
+?                                                                  ?
+?  1. LOGIN AS ADMIN                                               ?
+?     POST /auth/login                                             ?
+?     Email: admin@busbooking.com                                  ?
+?     ??? Get admin token                                         ?
+?                                                                  ?
+?  2. VIEW DASHBOARD                                               ?
+?     GET /admin/dashboard                                         ?
+?     Header: X-User-Token: ADMIN_TOKEN                            ?
+?     ??? System-wide statistics                                  ?
+?                                                                  ?
+?  3. REVIEW PENDING OPERATORS                                     ?
+?     GET /admin/operators/pending                                 ?
+?     ??? List of operators awaiting approval                     ?
+?                                                                  ?
+?  4. APPROVE/REJECT OPERATOR                                      ?
+?     POST /admin/operators/approve                                ?
+?     Body: { operatorId: "..." }                                  ?
+?     ??? Operator approved/rejected                              ?
+?                                                                  ?
+?  5. MANAGE USERS                                                 ?
+?     GET /admin/users                                             ?
+?     PATCH /admin/users/{userId}/status                           ?
+?     ??? View and manage user accounts                           ?
+?                                                                  ?
+?  6. VIEW ALL BOOKINGS                                            ?
+?     GET /admin/bookings                                          ?
+?     GET /admin/bookings/statistics                               ?
+?     ??? System-wide booking information                         ?
+?                                                                  ?
+?  7. MANAGE OFFERS                                                ?
+?     GET /admin/offers                                            ?
+?     POST /admin/offers                                           ?
+?     PUT /admin/offers/{offerId}                                  ?
+?     ??? Create and manage discount offers                       ?
+?                                                                  ?
+?  8. VIEW ANALYTICS                                               ?
+?     GET /admin/analytics?metric=revenue                          ?
+?     GET /admin/reports?reportType=bookings                       ?
+?     ??? Detailed analytics and reports                          ?
+?                                                                  ?
+?  9. MANAGE REFUNDS                                               ?
+?     GET /admin/payments/failed                                   ?
+?     POST /admin/refunds/{refundId}/approve                       ?
+?     ??? Handle payment issues and refunds                       ?
+?                                                                  ?
+????????????????????????????????????????????????????????????????????
+```
+
 ---
 
 ## ?? CSS for Seat Selection
@@ -1429,6 +1540,541 @@ export default SeatSelection;
 
 .legend .booked::before {
   background: #ccc;
+}
+```
+
+---
+
+## ?? Operator Dashboard Integration
+
+### Operator Service Layer
+
+```typescript
+// services/operatorService.ts
+import apiClient from '../api/axiosConfig';
+
+export const operatorService = {
+  // Dashboard
+  getDashboard: async () => {
+    const response = await apiClient.get('/operator/dashboard');
+    return response.data;
+  },
+
+  getProfile: async () => {
+    const response = await apiClient.get('/operator/profile');
+    return response.data;
+  },
+
+  updateProfile: async (data: any) => {
+    const response = await apiClient.put('/operator/profile', data);
+    return response.data;
+  },
+
+  // Buses
+  getBuses: async () => {
+    const response = await apiClient.get('/operator/buses');
+    return response.data;
+  },
+
+  createBus: async (data: any) => {
+    const response = await apiClient.post('/operator/buses', data);
+    return response.data;
+  },
+
+  updateBus: async (busId: string, data: any) => {
+    const response = await apiClient.put(`/operator/buses/${busId}`, data);
+    return response.data;
+  },
+
+  deleteBus: async (busId: string) => {
+    const response = await apiClient.delete(`/operator/buses/${busId}`);
+    return response.data;
+  },
+
+  // Routes
+  getRoutes: async () => {
+    const response = await apiClient.get('/operator/routes');
+    return response.data;
+  },
+
+  createRoute: async (data: any) => {
+    const response = await apiClient.post('/operator/routes', data);
+    return response.data;
+  },
+
+  // Schedules
+  getSchedules: async () => {
+    const response = await apiClient.get('/operator/schedules');
+    return response.data;
+  },
+
+  createSchedule: async (data: any) => {
+    const response = await apiClient.post('/operator/schedules', data);
+    return response.data;
+  },
+
+  updateSchedule: async (scheduleId: string, data: any) => {
+    const response = await apiClient.put(`/operator/schedules/${scheduleId}`, data);
+    return response.data;
+  },
+
+  deleteSchedule: async (scheduleId: string) => {
+    const response = await apiClient.delete(`/operator/schedules/${scheduleId}`);
+    return response.data;
+  },
+
+  // Trips
+  getTrips: async (date?: string) => {
+    const url = date ? `/operator/trips?date=${date}` : '/operator/trips';
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  getTripDetails: async (tripId: string) => {
+    const response = await apiClient.get(`/operator/trips/${tripId}`);
+    return response.data;
+  },
+
+  updateTripStatus: async (tripId: string, status: number) => {
+    const response = await apiClient.patch(`/operator/trips/${tripId}/status`, { currentStatus: status });
+    return response.data;
+  },
+
+  cancelTrip: async (tripId: string, reason: string) => {
+    const response = await apiClient.post(`/operator/trips/${tripId}/cancel`, { reason });
+    return response.data;
+  },
+
+  // Bookings
+  getBookings: async (page = 1, pageSize = 10) => {
+    const response = await apiClient.get(`/operator/bookings?pageNumber=${page}&pageSize=${pageSize}`);
+    return response.data;
+  },
+
+  // Revenue
+  getRevenue: async (startDate: string, endDate: string, groupBy = 'day') => {
+    const response = await apiClient.get(`/operator/revenue?startDate=${startDate}&endDate=${endDate}&groupBy=${groupBy}`);
+    return response.data;
+  },
+
+  exportRevenue: async (startDate: string, endDate: string) => {
+    const response = await apiClient.get(`/operator/revenue/export?startDate=${startDate}&endDate=${endDate}`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
+  // Reviews
+  getReviews: async (page = 1, pageSize = 10) => {
+    const response = await apiClient.get(`/operator/reviews?pageNumber=${page}&pageSize=${pageSize}`);
+    return response.data;
+  },
+
+  getReviewStats: async () => {
+    const response = await apiClient.get('/operator/reviews/stats');
+    return response.data;
+  },
+};
+```
+
+### Operator TypeScript Interfaces
+
+```typescript
+// types/operator.ts
+
+export interface OperatorDashboard {
+  operatorId: string;
+  companyName: string;
+  totalBuses: number;
+  activeBuses: number;
+  totalRoutes: number;
+  totalSchedules: number;
+  todayTrips: number;
+  totalBookingsToday: number;
+  todayRevenue: number;
+  monthlyRevenue: number;
+  averageRating: number;
+  totalReviews: number;
+}
+
+export interface OperatorBus {
+  busId: string;
+  busNumber: string;
+  busType: string;
+  busCategory: string;
+  totalSeats: number;
+  registrationNumber: string;
+  isActive: boolean;
+  amenities: string[];
+}
+
+export interface CreateBusRequest {
+  busNumber: string;
+  busType: number; // 0 = AC, 1 = NonAC
+  busCategory: number; // 0 = Sleeper, 1 = Seater, 2 = SemiSleeper
+  totalSeats: number;
+  registrationNumber: string;
+  amenities: string[];
+}
+
+export interface OperatorSchedule {
+  scheduleId: string;
+  busNumber: string;
+  route: string;
+  departureTime: string;
+  arrivalTime: string;
+  baseFare: number;
+  isActive: boolean;
+}
+
+export interface CreateScheduleRequest {
+  busId: string;
+  routeId: string;
+  departureTime: string; // ISO datetime
+  arrivalTime: string; // ISO datetime
+  baseFare: number;
+  isActive: boolean;
+  availableDates?: string[];
+}
+
+export interface OperatorTrip {
+  tripId: string;
+  scheduleId: string;
+  busNumber: string;
+  route: string;
+  tripDate: string;
+  departureDateTime: string;
+  arrivalDateTime: string;
+  currentStatus: string;
+  availableSeats: number;
+  bookedSeats: number;
+}
+
+export interface RevenueStatistics {
+  totalRevenue: number;
+  totalBookings: number;
+  totalPassengers: number;
+  cancelledBookings: number;
+  refundedAmount: number;
+  netRevenue: number;
+  breakdown: RevenueBreakdown[];
+}
+
+export interface RevenueBreakdown {
+  period: string;
+  revenue: number;
+  bookings: number;
+}
+```
+
+### Operator Dashboard Component
+
+```tsx
+// components/operator/OperatorDashboard.tsx
+import React, { useState, useEffect } from 'react';
+import { operatorService } from '../../services/operatorService';
+import { OperatorDashboard as DashboardData } from '../../types/operator';
+
+const OperatorDashboard: React.FC = () => {
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const response = await operatorService.getDashboard();
+        if (response.success) {
+          setDashboard(response.data);
+        } else {
+          setError(response.message);
+        }
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Failed to load dashboard');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchDashboard();
+  }, []);
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div className="error">{error}</div>;
+  if (!dashboard) return null;
+
+  return (
+    <div className="operator-dashboard">
+      <h1>Welcome, {dashboard.companyName}</h1>
+      
+      <div className="stats-grid">
+        <div className="stat-card">
+          <h3>Total Buses</h3>
+          <p>{dashboard.totalBuses}</p>
+          <small>{dashboard.activeBuses} active</small>
+        </div>
+        
+        <div className="stat-card">
+          <h3>Today's Trips</h3>
+          <p>{dashboard.todayTrips}</p>
+        </div>
+        
+        <div className="stat-card">
+          <h3>Today's Bookings</h3>
+          <p>{dashboard.totalBookingsToday}</p>
+        </div>
+        
+        <div className="stat-card">
+          <h3>Today's Revenue</h3>
+          <p>?{dashboard.todayRevenue.toLocaleString()}</p>
+        </div>
+        
+        <div className="stat-card">
+          <h3>Monthly Revenue</h3>
+          <p>?{dashboard.monthlyRevenue.toLocaleString()}</p>
+        </div>
+        
+        <div className="stat-card">
+          <h3>Rating</h3>
+          <p>? {dashboard.averageRating.toFixed(1)}</p>
+          <small>{dashboard.totalReviews} reviews</small>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default OperatorDashboard;
+```
+
+---
+
+## ????? Admin Panel Integration
+
+### Admin Service Layer
+
+```typescript
+// services/adminService.ts
+import apiClient from '../api/axiosConfig';
+
+export const adminService = {
+  // Dashboard
+  getDashboard: async () => {
+    const response = await apiClient.get('/admin/dashboard');
+    return response.data;
+  },
+
+  getAnalytics: async (metric: string, startDate: string, endDate: string) => {
+    const response = await apiClient.get(`/admin/analytics?metric=${metric}&startDate=${startDate}&endDate=${endDate}`);
+    return response.data;
+  },
+
+  getReports: async (reportType: string, startDate: string, endDate: string) => {
+    const response = await apiClient.get(`/admin/reports?reportType=${reportType}&startDate=${startDate}&endDate=${endDate}`);
+    return response.data;
+  },
+
+  // Users
+  getUsers: async (page = 1, pageSize = 10, role?: string) => {
+    let url = `/admin/users?pageNumber=${page}&pageSize=${pageSize}`;
+    if (role) url += `&role=${role}`;
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  getUserDetails: async (userId: string) => {
+    const response = await apiClient.get(`/admin/users/${userId}`);
+    return response.data;
+  },
+
+  updateUserStatus: async (userId: string, isActive: boolean) => {
+    const response = await apiClient.patch(`/admin/users/${userId}/status`, { isActive });
+    return response.data;
+  },
+
+  deleteUser: async (userId: string) => {
+    const response = await apiClient.delete(`/admin/users/${userId}`);
+    return response.data;
+  },
+
+  getUserStatistics: async () => {
+    const response = await apiClient.get('/admin/users/statistics');
+    return response.data;
+  },
+
+  // Operators
+  getOperators: async (page = 1, pageSize = 10) => {
+    const response = await apiClient.get(`/admin/operators?pageNumber=${page}&pageSize=${pageSize}`);
+    return response.data;
+  },
+
+  getOperatorDetails: async (operatorId: string) => {
+    const response = await apiClient.get(`/admin/operators/${operatorId}`);
+    return response.data;
+  },
+
+  getPendingOperators: async () => {
+    const response = await apiClient.get('/admin/operators/pending');
+    return response.data;
+  },
+
+  approveOperator: async (operatorId: string) => {
+    const response = await apiClient.post('/admin/operators/approve', { operatorId });
+    return response.data;
+  },
+
+  updateOperatorStatus: async (operatorId: string, isApproved: boolean) => {
+    const response = await apiClient.patch(`/admin/operators/${operatorId}/status`, { isApproved });
+    return response.data;
+  },
+
+  deleteOperator: async (operatorId: string) => {
+    const response = await apiClient.delete(`/admin/operators/${operatorId}`);
+    return response.data;
+  },
+
+  // Bookings
+  getBookings: async (page = 1, pageSize = 10, status?: string) => {
+    let url = `/admin/bookings?pageNumber=${page}&pageSize=${pageSize}`;
+    if (status) url += `&status=${status}`;
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  getBookingStatistics: async () => {
+    const response = await apiClient.get('/admin/bookings/statistics');
+    return response.data;
+  },
+
+  modifyBooking: async (bookingId: string, bookingStatus: number) => {
+    const response = await apiClient.patch(`/admin/bookings/${bookingId}`, { bookingStatus });
+    return response.data;
+  },
+
+  // Payments
+  getPayments: async (page = 1, pageSize = 10, status?: string) => {
+    let url = `/admin/payments?pageNumber=${page}&pageSize=${pageSize}`;
+    if (status) url += `&status=${status}`;
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  getFailedPayments: async () => {
+    const response = await apiClient.get('/admin/payments/failed');
+    return response.data;
+  },
+
+  getPaymentReconciliation: async (date: string) => {
+    const response = await apiClient.get(`/admin/payments/reconcile?date=${date}`);
+    return response.data;
+  },
+
+  approveRefund: async (refundId: string, notes: string) => {
+    const response = await apiClient.post(`/admin/refunds/${refundId}/approve`, { notes });
+    return response.data;
+  },
+
+  rejectRefund: async (refundId: string, reason: string) => {
+    const response = await apiClient.post(`/admin/refunds/${refundId}/reject`, { reason });
+    return response.data;
+  },
+
+  // Offers
+  getOffers: async (page = 1, pageSize = 10) => {
+    const response = await apiClient.get(`/admin/offers?pageNumber=${page}&pageSize=${pageSize}`);
+    return response.data;
+  },
+
+  createOffer: async (data: any) => {
+    const response = await apiClient.post('/admin/offers', data);
+    return response.data;
+  },
+
+  updateOffer: async (offerId: string, data: any) => {
+    const response = await apiClient.put(`/admin/offers/${offerId}`, data);
+    return response.data;
+  },
+
+  deleteOffer: async (offerId: string) => {
+    const response = await apiClient.delete(`/admin/offers/${offerId}`);
+    return response.data;
+  },
+};
+```
+
+### Admin TypeScript Interfaces
+
+```typescript
+// types/admin.ts
+
+export interface AdminDashboard {
+  totalUsers: number;
+  totalOperators: number;
+  pendingOperatorApprovals: number;
+  totalBuses: number;
+  totalRoutes: number;
+  todayTrips: number;
+  totalBookingsToday: number;
+  todayRevenue: number;
+  monthlyRevenue: number;
+  activeDisputes: number;
+}
+
+export interface AdminUser {
+  userId: string;
+  email: string;
+  fullName: string;
+  phoneNumber: string;
+  role: string;
+  isVerified: boolean;
+  createdAt: string;
+}
+
+export interface AdminOperator {
+  operatorId: string;
+  companyName: string;
+  contactEmail: string;
+  contactPhone: string;
+  city: string;
+  rating: number;
+  isApproved: boolean;
+  totalBuses: number;
+  createdAt: string;
+}
+
+export interface PendingOperator {
+  operatorId: string;
+  companyName: string;
+  licenseNumber: string;
+  contactEmail: string;
+  contactPhone: string;
+  city: string;
+  state: string;
+  createdAt: string;
+}
+
+export interface BookingStatistics {
+  totalBookings: number;
+  confirmedBookings: number;
+  cancelledBookings: number;
+  completedBookings: number;
+  totalRevenue: number;
+  averageBookingValue: number;
+  bookingsToday: number;
+  bookingsThisWeek: number;
+  bookingsThisMonth: number;
+}
+
+export interface CreateOfferRequest {
+  offerCode: string;
+  description: string;
+  discountType: number; // 0 = Percentage, 1 = Flat
+  discountValue: number;
+  minBookingAmount: number;
+  maxDiscount: number;
+  validFrom: string;
+  validTo: string;
+  usageLimit: number;
+  isActive: boolean;
 }
 ```
 
